@@ -1,0 +1,101 @@
+Bootstrap:docker  
+From:ubuntu:16.04 
+
+%labels
+MAINTAINER JonShelley
+APP Chainermn
+APP_TYPE AI
+
+%files
+    ../../../nvidia/libcudnn7-dev_7.1.4.18-1_cuda9.2_amd64.deb /tmp
+    ../../../nvidia/libcudnn7_7.1.4.18-1_cuda9.2_amd64.deb /tmp
+    ../../../nvidia/nvidia-machine-learning-repo-ubuntu1604_1.0.0-1_amd64.deb /tmp
+
+%post  
+echo "This section happens once after bootstrap to build the image."  
+
+# Install the various packages
+apt-get update
+apt-get install -y software-properties-common
+add-apt-repository "deb http://archive.ubuntu.com/ubuntu $(lsb_release -sc) main universe"
+apt-get update -y
+apt-get install -y build-essential
+apt-get install -y wget
+apt-get install -y git-core
+
+# Install Cuda
+# Install CUDA driver and CUDA
+CUDA_REPO_PKG=cuda-repo-ubuntu1604_9.2.88-1_amd64.deb
+echo "Setting up CUDA components"
+wget -O /tmp/${CUDA_REPO_PKG} http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/${CUDA_REPO_PKG}
+dpkg -i /tmp/${CUDA_REPO_PKG}
+apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub
+rm -f /tmp/${CUDA_REPO_PKG}
+apt-get update
+echo "Setting up CUDA driver"
+apt-get install -y cuda-drivers
+echo "Setting up CUDA"
+apt-get install -y cuda
+
+# Install cuDNN
+cudnn_pkg="libcudnn7_7.1.4.18-1_cuda9.2_amd64.deb"
+dpkg -i /tmp/${cudnn_pkg}
+cudnn_dev_pkg="libcudnn7-dev_7.1.4.18-1_cuda9.2_amd64.deb"
+dpkg -i /tmp/${cudnn_dev_pkg}
+
+# Install NCCL
+nccl_pkg=nvidia-machine-learning-repo-ubuntu1604_1.0.0-1_amd64.deb
+dpkg -i /tmp/${nccl_pkg}
+apt update
+apt-get install -y cuda cuda-drivers
+apt install libnccl2 libnccl-dev
+
+# Install Openmpi 3.1
+openmpi_repo=https://download.open-mpi.org/release/open-mpi/v3.1
+openmpi_pkg=openmpi-3.1.0
+wget ${openmpi_repo}/${openmpi_pkg}.tar.gz -O ${openmpi_pkg}.tar.gz
+tar xzvf ${openmpi_pkg}.tar.gz
+cd ${openmpi_pkg}
+./configure --prefix=/usr/local --with-cuda=/usr/local/cuda
+make -j4
+make install
+
+# Install python
+export LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+export CUDA_PATH=/usr/local/cuda
+
+# Install pip and then the chainermn packages
+apt-get -y install python3-pip
+pip3 install cupy
+pip3 install mpi4py
+pip3 install chainermn
+
+# To look at .dot files output by chainermn
+apt-get install -y python-pydot python-pydot-ng graphviz
+
+# Install profiling tools
+apt install -y dstat
+apt install -y iotop
+apt install -y atop
+apt install -y ioping
+apt install -y iperf
+apt install -y sysstat
+
+# Install storage packages
+apt-get -y install cifs-utils
+
+# Mount the file shares
+mkdir /azcat-apps
+
+# Install additional packages
+apt-get -y install lmod tcl
+apt-get -y install nfs-common
+
+
+# Get chainer examples from get
+mkdir /myapps
+cd /myapps
+git clone https://github.com/chainer/chainermn.git
+
+%test
+    /usr/local/bin/mpirun --allow-run-as-root /usr/bin/mpi_test
